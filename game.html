@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Star Catcher — built from one prompt</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0b0e1a; overflow: hidden; }
+  body { font-family: system-ui, sans-serif; color: #fff; }
+  #wrap { position: relative; width: 100vw; height: 100vh; }
+  canvas { display: block; }
+  #hud {
+    position: absolute; top: 14px; left: 0; right: 0;
+    display: flex; justify-content: space-between; padding: 0 22px;
+    font-size: 22px; font-weight: 700; pointer-events: none;
+  }
+  #msg {
+    position: absolute; left: 0; right: 0; top: 42%; text-align: center;
+    font-size: 30px; font-weight: 800; line-height: 1.5; pointer-events: none;
+  }
+  #msg small { display: block; font-size: 18px; font-weight: 400; color: #9aa3b2; }
+  a { color: #ff5db1; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="game"></canvas>
+  <div id="hud"><span id="score">SCORE 0</span><span id="lives">LIVES 3</span></div>
+  <div id="msg">CATCH THE FALLING STARS<small>Move with your mouse or arrow keys &mdash; miss 3 and it is over.<br>Built from one prompt by an AI agent, for <a href="https://make.fun">make.fun</a>.</small></div>
+</div>
+<script>
+  // Star Catcher: one prompt, one tiny game. Stars fall from the sky; catch
+  // them on the paddle. Every catch is a point; every star that hits the
+  // ground costs a life. Three lives, then the game is over.
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const scoreEl = document.getElementById('score');
+  const livesEl = document.getElementById('lives');
+  const msgEl = document.getElementById('msg');
+
+  let W = 0, H = 0;
+  function resize() {
+    W = canvas.width = window.innerWidth;
+    H = canvas.height = window.innerHeight;
+    paddle.y = H - 90;
+    paddle.x = Math.min(paddle.x, W - paddle.w);
+  }
+  window.addEventListener('resize', resize);
+
+  const paddle = { w: 150, h: 18, x: 0, y: 0, speed: 14 };
+  const stars = [];
+  let score = 0, lives = 3, over = false, started = false, lastSpawn = 0;
+
+  function spawnStar() {
+    const size = 18 + Math.random() * 18;
+    stars.push({
+      x: size + Math.random() * (W - size * 2),
+      y: -size,
+      size,
+      speed: 2 + Math.random() * 2.5 + score * 0.03,
+      spin: Math.random() * Math.PI * 2,
+      spinSpeed: (Math.random() - 0.5) * 0.06,
+    });
+  }
+
+  function drawStar(s) {
+    ctx.save();
+    ctx.translate(s.x, s.y);
+    ctx.rotate(s.spin);
+    ctx.fillStyle = '#ffd23f';
+    ctx.beginPath();
+    for (let i = 0; i < 5; i++) {
+      const a = (i * 4 * Math.PI) / 5 - Math.PI / 2;
+      const r = i % 2 === 0 ? s.size : s.size * 0.45;
+      ctx[i === 0 ? 'moveTo' : 'lineTo'](Math.cos(a) * r, Math.sin(a) * r);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function step(now) {
+    ctx.clearRect(0, 0, W, H);
+
+    // Night sky: a few static stars for depth.
+    ctx.fillStyle = '#ffffff';
+    for (let i = 0; i < 40; i++) {
+      const x = (i * 173) % W, y = (i * 97) % (H * 0.6);
+      ctx.globalAlpha = 0.25 + ((i * 7) % 10) / 20;
+      ctx.fillRect(x, y, 2, 2);
+    }
+    ctx.globalAlpha = 1;
+
+    if (!over && now - lastSpawn > 700) { spawnStar(); lastSpawn = now; }
+
+    // Paddle.
+    ctx.fillStyle = '#ffd23f';
+    ctx.fillRect(paddle.x, paddle.y, paddle.w, paddle.h);
+
+    // Ground line.
+    ctx.fillStyle = '#2a3348';
+    ctx.fillRect(0, H - 40, W, 4);
+
+    for (let i = stars.length - 1; i >= 0; i--) {
+      const s = stars[i];
+      s.y += s.speed;
+      s.spin += s.spinSpeed;
+      drawStar(s);
+
+      const caught = s.y + s.size >= paddle.y && s.y <= paddle.y + paddle.h &&
+        s.x > paddle.x - s.size / 2 && s.x < paddle.x + paddle.w + s.size / 2;
+      if (caught) {
+        score++;
+        scoreEl.textContent = 'SCORE ' + score;
+        stars.splice(i, 1);
+        continue;
+      }
+      if (s.y - s.size > H - 40) {
+        stars.splice(i, 1);
+        if (!over) {
+          lives--;
+          livesEl.textContent = 'LIVES ' + Math.max(lives, 0);
+          if (lives <= 0) {
+            over = true;
+            msgEl.innerHTML = 'GAME OVER &mdash; you caught ' + score + ' stars.' +
+              '<small>Refresh to play again. Built from one prompt on <a href="https://make.fun">make.fun</a>.</small>';
+            msgEl.style.display = 'block';
+          }
+        }
+      }
+    }
+
+    if (!over) requestAnimationFrame(step);
+  }
+
+  function start() {
+    if (started) return;
+    started = true;
+    msgEl.style.display = 'none';
+    requestAnimationFrame(step);
+  }
+
+  window.addEventListener('mousemove', (e) => {
+    paddle.x = Math.max(0, Math.min(W - paddle.w, e.clientX - paddle.w / 2));
+    start();
+  });
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowLeft') paddle.x = Math.max(0, paddle.x - paddle.speed * 2);
+    if (e.key === 'ArrowRight') paddle.x = Math.min(W - paddle.w, paddle.x + paddle.speed * 2);
+    start();
+  });
+  window.addEventListener('pointerdown', start);
+
+  resize();
+  paddle.x = (W - paddle.w) / 2;
+  requestAnimationFrame(step);
+</script>
+</body>
+</html>
